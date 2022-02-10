@@ -16,6 +16,7 @@ import random
 from unittest import mock
 
 from cryptography import fernet
+from oslo_config import fixture as oslo_fixture
 from oslo_db import exception as odb_exceptions
 from oslo_utils import uuidutils
 from sqlalchemy.orm import exc
@@ -23,6 +24,7 @@ from taskflow.types import failure
 
 from octavia.api.drivers import utils as provider_utils
 from octavia.common import constants
+from octavia.common import context
 from octavia.common import data_models
 from octavia.common import utils
 from octavia.controller.worker.v2.tasks import database_tasks
@@ -36,16 +38,32 @@ LB_ID = uuidutils.generate_uuid()
 SERVER_GROUP_ID = uuidutils.generate_uuid()
 LB_NET_IP = '192.0.2.2'
 LISTENER_ID = uuidutils.generate_uuid()
+LISTENER_ID1 = uuidutils.generate_uuid()
+LISTENER_ID2 = uuidutils.generate_uuid()
+REDIRECT_POLICY = uuidutils.generate_uuid()
+RULE1 = uuidutils.generate_uuid()
+DEFAULT_POOL = uuidutils.generate_uuid()
 POOL_ID = uuidutils.generate_uuid()
 HM_ID = uuidutils.generate_uuid()
 MEMBER_ID = uuidutils.generate_uuid()
+MEMBER1 = uuidutils.generate_uuid()
+MEMBER2 = uuidutils.generate_uuid()
+MEMBER3 = uuidutils.generate_uuid()
+MEMBER4 = uuidutils.generate_uuid()
+REDIRECT_POOL = uuidutils.generate_uuid()
+UNUSED_POOL = uuidutils.generate_uuid()
 PORT_ID = uuidutils.generate_uuid()
+NETWORK_ID = uuidutils.generate_uuid()
 SUBNET_ID = uuidutils.generate_uuid()
 VRRP_PORT_ID = uuidutils.generate_uuid()
 HA_PORT_ID = uuidutils.generate_uuid()
 L7POLICY_ID = uuidutils.generate_uuid()
 L7RULE_ID = uuidutils.generate_uuid()
+TLS_VERSIONS = ["TLSv1", "TLSv1.2"]
+ALPN_PROTOCOLS = ["http/1.0", "http/1.1"]
 VIP_IP = '192.0.5.2'
+VIP_SUBNET_ID = uuidutils.generate_uuid()
+QOS_POLICY_ID = uuidutils.generate_uuid()
 VRRP_ID = 1
 VRRP_IP = '192.0.5.3'
 HA_IP = '192.0.5.4'
@@ -68,6 +86,10 @@ _db_amphora_mock.vrrp_id = VRRP_ID
 _db_amphora_mock.vrrp_priority = VRRP_PRIORITY
 _db_loadbalancer_mock = mock.MagicMock()
 _db_loadbalancer_mock.id = LB_ID
+_db_loadbalancer_mock.vip.subnet_id = SUBNET_ID
+_db_loadbalancer_mock.vip.port_id = PORT_ID
+_db_loadbalancer_mock.vip.network_id = NETWORK_ID
+_db_loadbalancer_mock.vip.qos_policy_id = QOS_POLICY_ID
 _db_loadbalancer_mock.vip_address = VIP_IP
 _db_loadbalancer_mock.amphorae = [_db_amphora_mock]
 _db_loadbalancer_mock.to_dict.return_value = {
@@ -81,15 +103,20 @@ _listener_mock = mock.MagicMock()
 _listener_to_dict_mock = mock.MagicMock(
     return_value={constants.ID: LISTENER_ID})
 _listener_mock.id = LISTENER_ID
+_listener_mock.tls_versions = TLS_VERSIONS
+_listener_mock.alpn_protocols = ALPN_PROTOCOLS
 _listener_mock.to_dict = _listener_to_dict_mock
 _tf_failure_mock = mock.Mock(spec=failure.Failure)
 _vip_mock = mock.MagicMock()
 _vip_mock.port_id = PORT_ID
 _vip_mock.subnet_id = SUBNET_ID
+_vip_mock.qos_policy_id = QOS_POLICY_ID
+_vip_mock.network_id = NETWORK_ID
 _vip_mock.ip_address = VIP_IP
 _vip_mock.to_dict.return_value = {
     constants.PORT_ID: PORT_ID,
     constants.SUBNET_ID: SUBNET_ID,
+    constants.NETWORK_ID: NETWORK_ID,
     constants.IP_ADDRESS: VIP_IP,
 }
 _vrrp_group_mock = mock.MagicMock()
@@ -172,6 +199,9 @@ class TestDatabaseTasks(base.TestCase):
         _db_amphora_mock.to_dict.return_value = self.amphora
 
         super().setUp()
+        self.conf = self.useFixture(oslo_fixture.Config())
+        self.conf.conf.__call__(args=[])
+        self.context = context.Context('fake', 'fake')
 
     @mock.patch('octavia.db.repositories.AmphoraRepository.create',
                 return_value=_db_amphora_mock)
@@ -1160,10 +1190,13 @@ class TestDatabaseTasks(base.TestCase):
             AMP_ID,
             cert_busy=False)
 
+    @mock.patch('octavia.db.repositories.LoadBalancerRepository.get',
+                return_value=_db_loadbalancer_mock)
     def test_mark_LB_active_in_db(self,
                                   mock_generate_uuid,
                                   mock_LOG,
                                   mock_get_session,
+                                  mock_loadbalancer_repo_get,
                                   mock_loadbalancer_repo_update,
                                   mock_listener_repo_update,
                                   mock_amphora_repo_update,
@@ -1237,8 +1270,8 @@ class TestDatabaseTasks(base.TestCase):
                                                 mock_listener_repo_update,
                                                 mock_amphora_repo_update,
                                                 mock_amphora_repo_delete):
-        listeners = [data_models.Listener(id='listener1'),
-                     data_models.Listener(id='listener2')]
+        listeners = [data_models.Listener(id=LISTENER_ID1),
+                     data_models.Listener(id=LISTENER_ID2)]
         lb = data_models.LoadBalancer(id=LB_ID, listeners=listeners)
         mock_lb_get.return_value = lb
         mark_lb_active = database_tasks.MarkLBActiveInDB(mark_subobjects=True)
@@ -1287,25 +1320,25 @@ class TestDatabaseTasks(base.TestCase):
                                              mock_listener_repo_update,
                                              mock_amphora_repo_update,
                                              mock_amphora_repo_delete):
-        unused_pool = data_models.Pool(id='unused_pool')
-        members1 = [data_models.Member(id='member1'),
-                    data_models.Member(id='member2')]
+        unused_pool = data_models.Pool(id=UNUSED_POOL)
+        members1 = [data_models.Member(id=MEMBER1),
+                    data_models.Member(id=MEMBER2)]
         health_monitor = data_models.HealthMonitor(id='hm1')
-        default_pool = data_models.Pool(id='default_pool',
+        default_pool = data_models.Pool(id=DEFAULT_POOL,
                                         members=members1,
                                         health_monitor=health_monitor)
-        listener1 = data_models.Listener(id='listener1',
+        listener1 = data_models.Listener(id=LISTENER_ID1,
                                          default_pool=default_pool)
-        members2 = [data_models.Member(id='member3'),
-                    data_models.Member(id='member4')]
-        redirect_pool = data_models.Pool(id='redirect_pool',
+        members2 = [data_models.Member(id=MEMBER3),
+                    data_models.Member(id=MEMBER4)]
+        redirect_pool = data_models.Pool(id=REDIRECT_POOL,
                                          members=members2)
-        l7rules = [data_models.L7Rule(id='rule1')]
-        redirect_policy = data_models.L7Policy(id='redirect_policy',
+        l7rules = [data_models.L7Rule(id=RULE1)]
+        redirect_policy = data_models.L7Policy(id=REDIRECT_POLICY,
                                                redirect_pool=redirect_pool,
                                                l7rules=l7rules)
         l7policies = [redirect_policy]
-        listener2 = data_models.Listener(id='listener2',
+        listener2 = data_models.Listener(id=LISTENER_ID2,
                                          l7policies=l7policies)
         listener2.l7policies = l7policies
         listeners = [listener1, listener2]
@@ -1376,10 +1409,13 @@ class TestDatabaseTasks(base.TestCase):
             [mock.call('TEST', l7rules[0].id,
                        provisioning_status=constants.ERROR)])
 
+    @mock.patch('octavia.db.repositories.LoadBalancerRepository.get',
+                return_value=_db_loadbalancer_mock)
     def test_mark_LB_deleted_in_db(self,
                                    mock_generate_uuid,
                                    mock_LOG,
                                    mock_get_session,
+                                   mock_loadbalancer_repo_get,
                                    mock_loadbalancer_repo_update,
                                    mock_listener_repo_update,
                                    mock_amphora_repo_update,

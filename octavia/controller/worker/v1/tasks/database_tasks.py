@@ -24,9 +24,12 @@ from sqlalchemy.orm import exc
 from taskflow import task
 from taskflow.types import failure
 
+from octavia.api.v2.types import load_balancer as lb_types
 from octavia.common import constants
+from octavia.common import context
 from octavia.common import data_models
-import octavia.common.tls_utils.cert_parser as cert_parser
+from octavia.common import rpc
+from octavia.common.tls_utils import cert_parser
 from octavia.common import utils
 from octavia.common import validate
 from octavia.controller.worker import task_utils as task_utilities
@@ -54,6 +57,7 @@ class BaseDatabaseTask(task.Task):
         self.l7rule_repo = repo.L7RuleRepository()
         self.task_utils = task_utilities.TaskUtils()
         super().__init__(**kwargs)
+        self._rpc_notifier = rpc.get_notifier()
 
     def _delete_from_amp_health(self, amphora_id):
         """Delete the amphora_health record for an amphora.
@@ -989,6 +993,15 @@ class MarkLBActiveInDB(BaseDatabaseTask):
                                       loadbalancer.id,
                                       provisioning_status=constants.ACTIVE)
 
+        result = lb_types.LoadBalancerFullResponse.from_data_model(
+            loadbalancer)
+        if loadbalancer.provisioning_status == constants.PENDING_CREATE:
+            event_type = 'octavia.loadbalancer.create.end'
+        else:
+            event_type = 'octavia.loadbalancer.update.end'
+        ctx = context.Context(project_id=loadbalancer.project_id)
+        self._rpc_notifier.info(ctx, event_type, result.to_dict())
+
     def _mark_listener_status(self, listener, status):
         self.listener_repo.update(db_apis.get_session(),
                                   listener.id,
@@ -1123,6 +1136,11 @@ class MarkLBDeletedInDB(BaseDatabaseTask):
         self.loadbalancer_repo.update(db_apis.get_session(),
                                       loadbalancer.id,
                                       provisioning_status=constants.DELETED)
+        result = lb_types.LoadBalancerFullResponse.from_data_model(
+            loadbalancer)
+        ctx = context.Context(project_id=loadbalancer.project_id)
+        self._rpc_notifier.info(ctx, 'octavia.loadbalancer.delete.end',
+                                result.to_dict())
 
 
 class MarkLBPendingDeleteInDB(BaseDatabaseTask):

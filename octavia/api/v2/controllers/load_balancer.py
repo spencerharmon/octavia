@@ -524,6 +524,8 @@ class LoadBalancersController(base.BaseController):
 
         result = self._convert_db_to_type(
             db_lb, lb_types.LoadBalancerFullResponse)
+        self._notifier.info(context, 'octavia.loadbalancer.create.start',
+                            result.to_dict())
         return lb_types.LoadBalancerFullRootResponse(loadbalancer=result)
 
     def _graph_create(self, session, lock_session, db_lb, listeners, pools):
@@ -693,6 +695,8 @@ class LoadBalancersController(base.BaseController):
         context.session.expire_all()
         db_lb = self._get_db_lb(context.session, id)
         result = self._convert_db_to_type(db_lb, lb_types.LoadBalancerResponse)
+        self._notifier.info(context, 'octavia.loadbalancer.update.start',
+                            result.to_dict())
         return lb_types.LoadBalancerRootResponse(loadbalancer=result)
 
     @wsme_pecan.wsexpose(None, wtypes.text, wtypes.text, status_code=204)
@@ -724,6 +728,10 @@ class LoadBalancersController(base.BaseController):
                     db_lb, for_delete=True))
             driver_utils.call_provider(driver.name, driver.loadbalancer_delete,
                                        provider_loadbalancer, cascade)
+
+        result = self._convert_db_to_type(db_lb, lb_types.LoadBalancerResponse)
+        self._notifier.info(context, 'octavia.loadbalancer.delete.start',
+                            result.to_dict())
 
     @pecan_expose()
     def _lookup(self, id, *remainder):
