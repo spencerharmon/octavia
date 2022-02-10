@@ -31,6 +31,7 @@ from octavia.controller.worker.v1.tasks import compute_tasks
 from octavia.controller.worker.v1.tasks import database_tasks
 from octavia.controller.worker.v1.tasks import lifecycle_tasks
 from octavia.controller.worker.v1.tasks import network_tasks
+from octavia.controller.worker.v1.tasks import notification_tasks
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -90,6 +91,12 @@ class LoadBalancerFlows(object):
 
         if listeners:
             lb_create_flow.add(*self._create_listeners_flow())
+            
+        lb_create_flow.add(
+            notification_tasks.SendCreateNotification(
+                requires=constants.LOADBALANCER
+            )
+        )
 
         return lb_create_flow
 
@@ -219,6 +226,7 @@ class LoadBalancerFlows(object):
                 requires=constants.LOADBALANCER
             )
         )
+
         return flows
 
     def get_post_lb_amp_association_flow(self, prefix, topology,
@@ -328,6 +336,8 @@ class LoadBalancerFlows(object):
             requires=constants.LOADBALANCER))
         delete_LB_flow.add(database_tasks.DecrementLoadBalancerQuota(
             requires=constants.LOADBALANCER))
+        delete_LB_flow.add(notification_tasks.SendDeleteNotification(
+            requires=constants.LOADBALANCER))
         return (delete_LB_flow, store)
 
     def get_cascade_delete_load_balancer_flow(self, lb):
@@ -353,6 +363,11 @@ class LoadBalancerFlows(object):
             requires=[constants.LOADBALANCER, constants.UPDATE_DICT]))
         update_LB_flow.add(database_tasks.MarkLBActiveInDB(
             requires=constants.LOADBALANCER))
+        update_LB_flow.add(
+            notification_tasks.SendUpdateNotification(
+                requires=constants.LOADBALANCER
+            )
+        )
 
         return update_LB_flow
 

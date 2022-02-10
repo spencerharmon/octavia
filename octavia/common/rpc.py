@@ -43,7 +43,7 @@ def get_transport_url(url_str=None):
 def get_client(target, version_cap=None, serializer=None,
                call_monitor_timeout=None):
     if TRANSPORT is None:
-        init()
+        raise AssertionError("'TRANSPORT' must not be None")
 
     return messaging.RPCClient(TRANSPORT,
                                target,
@@ -56,7 +56,7 @@ def get_server(target, endpoints, executor='threading',
                access_policy=dispatcher.DefaultRPCAccessPolicy,
                serializer=None):
     if TRANSPORT is None:
-        init()
+        raise AssertionError("'TRANSPORT' must not be None")
 
     return messaging.get_rpc_server(TRANSPORT,
                                     target,
@@ -68,7 +68,8 @@ def get_server(target, endpoints, executor='threading',
 
 def get_notifier(service=None, host=None, publisher_id=None):
     if NOTIFIER is None:
-        init()
+        raise AssertionError("'NOTIFIER' must not be None")
+
     return NOTIFIER.prepare()
 
 

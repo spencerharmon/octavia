@@ -57,7 +57,6 @@ class BaseDatabaseTask(task.Task):
         self.l7rule_repo = repo.L7RuleRepository()
         self.task_utils = task_utilities.TaskUtils()
         super().__init__(**kwargs)
-        self._rpc_notifier = rpc.get_notifier()
 
     def _delete_from_amp_health(self, amphora_id):
         """Delete the amphora_health record for an amphora.
@@ -1021,14 +1020,6 @@ class MarkLBActiveInDB(BaseDatabaseTask):
                                       loadbalancer[constants.LOADBALANCER_ID],
                                       provisioning_status=constants.ACTIVE)
 
-        result = lb_types.LoadBalancerFullResponse.from_data_model(db_lb)
-        if db_lb.provisioning_status == constants.PENDING_CREATE:
-            event_type = 'octavia.loadbalancer.create.end'
-        else:
-            event_type = 'octavia.loadbalancer.update.end'
-        ctx = context.Context(project_id=db_lb.project_id)
-        self._rpc_notifier.info(ctx, event_type, result.to_dict())
-
     def _mark_listener_status(self, listener, status):
         self.listener_repo.update(db_apis.get_session(),
                                   listener.id,
@@ -1188,10 +1179,6 @@ class MarkLBDeletedInDB(BaseDatabaseTask):
         self.loadbalancer_repo.update(db_apis.get_session(),
                                       loadbalancer[constants.LOADBALANCER_ID],
                                       provisioning_status=constants.DELETED)
-        result = lb_types.LoadBalancerFullResponse.from_data_model(db_lb)
-        ctx = context.Context(project_id=db_lb.project_id)
-        self._rpc_notifier.info(ctx, 'octavia.loadbalancer.delete.end',
-                                result.to_dict())
 
 
 class MarkLBPendingDeleteInDB(BaseDatabaseTask):
