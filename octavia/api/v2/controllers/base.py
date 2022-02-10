@@ -25,6 +25,7 @@ from octavia.common import constants
 from octavia.common import data_models
 from octavia.common import exceptions
 from octavia.common import policy
+from octavia.common import rpc
 from octavia.db import repositories
 from octavia.i18n import _
 
@@ -44,6 +45,7 @@ class BaseController(pecan_rest.RestController):
         ).driver
 
         self.repositories = repositories.Repositories()
+        self._notifier = rpc.get_notifier()
 
     @staticmethod
     def _convert_db_to_type(db_entity, to_type, children=False):

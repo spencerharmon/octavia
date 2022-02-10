@@ -18,11 +18,15 @@ from oslo_messaging.rpc import dispatcher
 LOG = logging.getLogger(__name__)
 
 TRANSPORT = None
+NOTIFICATION_TRANSPORT = None
+NOTIFIER = None
 
 
 def init():
-    global TRANSPORT
+    global TRANSPORT, NOTIFICATION_TRANSPORT, NOTIFIER
     TRANSPORT = create_transport(get_transport_url())
+    NOTIFICATION_TRANSPORT = messaging.get_notification_transport(cfg.CONF)
+    NOTIFIER = messaging.Notifier(NOTIFICATION_TRANSPORT)
 
 
 def cleanup():
@@ -60,6 +64,12 @@ def get_server(target, endpoints, executor='threading',
                                     executor=executor,
                                     serializer=serializer,
                                     access_policy=access_policy)
+
+
+def get_notifier(service=None, host=None, publisher_id=None):
+    if NOTIFIER is None:
+        init()
+    return NOTIFIER.prepare()
 
 
 def create_transport(url):
