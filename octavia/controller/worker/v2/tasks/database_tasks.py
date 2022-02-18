@@ -25,8 +25,11 @@ from taskflow import task
 from taskflow.types import failure
 
 from octavia.api.drivers import utils as provider_utils
+from octavia.api.v2.types import load_balancer as lb_types
 from octavia.common import constants
+from octavia.common import context
 from octavia.common import data_models
+from octavia.common import rpc
 from octavia.common.tls_utils import cert_parser
 from octavia.common import utils
 from octavia.controller.worker import task_utils as task_utilities
@@ -1002,12 +1005,12 @@ class MarkLBActiveInDB(BaseDatabaseTask):
         :returns: None
         """
 
+        db_lb = self.loadbalancer_repo.get(
+            db_apis.get_session(), id=loadbalancer[constants.LOADBALANCER_ID])
+
         if self.mark_subobjects:
             LOG.debug("Marking all listeners of loadbalancer %s ACTIVE",
                       loadbalancer[constants.LOADBALANCER_ID])
-            db_lb = self.loadbalancer_repo.get(
-                db_apis.get_session(),
-                id=loadbalancer[constants.LOADBALANCER_ID])
             for listener in db_lb.listeners:
                 self._mark_listener_status(listener, constants.ACTIVE)
 
@@ -1171,6 +1174,8 @@ class MarkLBDeletedInDB(BaseDatabaseTask):
 
         LOG.debug("Mark DELETED in DB for load balancer id: %s",
                   loadbalancer[constants.LOADBALANCER_ID])
+        db_lb = self.loadbalancer_repo.get(
+            db_apis.get_session(), id=loadbalancer[constants.LOADBALANCER_ID])
         self.loadbalancer_repo.update(db_apis.get_session(),
                                       loadbalancer[constants.LOADBALANCER_ID],
                                       provisioning_status=constants.DELETED)
